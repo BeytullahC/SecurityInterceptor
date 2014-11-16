@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns:p="http://www.springframework.org/schema/p"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:sec="http://www.springframework.org/schema/security"
+       xsi:schemaLocation="
+       http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-3.2.xsd
+       http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-3.2.xsd
+       http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-3.2.xsd
+       http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security.xsd">
+    
+    <bean id="defaultAuthEventPublisher" class="org.springframework.security.authentication.DefaultAuthenticationEventPublisher"/>
+    
+    <!--
+    <bean id = "authenticationEventListenter" class = "com.sistek.core.listener.AuthenticationEventListenter"/>
+    -->
+    <bean id="accessDecisionManager" class="org.springframework.security.access.vote.AffirmativeBased">
+        <property name="decisionVoters">
+                <list>
+                        <bean class="org.springframework.security.access.vote.RoleVoter">
+                            <property name="rolePrefix" value = "ROLE_"/>
+                        </bean>
+                        <bean class="org.springframework.security.access.vote.AuthenticatedVoter" />
+                </list>
+        </property>
+    </bean>
+    
+    <bean id="authenticationManager" class="org.springframework.security.authentication.ProviderManager">
+        <property name="providers">
+                <list>
+                        <ref bean="authenticationProvider"/>
+                        
+                </list>
+        </property>
+        
+        <property name="authenticationEventPublisher" ref="defaultAuthEventPublisher"/>
+    </bean>
+    <sec:authentication-manager>
+        <sec:authentication-provider user-service-ref="customUserDetailsService"/>
+            
+    </sec:authentication-manager>
+    
+    <bean id="authenticationProvider" class="org.springframework.security.authentication.dao.DaoAuthenticationProvider">
+        <property name="userDetailsService" ref="customUserDetailsService"/>
+        <property name="passwordEncoder" ref="passwordEncoder"/>
+    </bean>
+     
+     <!-- Authentication yapilirken MD5 password sifreleme kullaniliyor -->
+     
+     <!--<bean id="passwordEncoder" class="org.springframework.security.authentication.encoding.PlaintextPasswordEncoder"/>-->     
+     
+    <bean id="passwordEncoder" class="com.beto.test.securityinterceptor.security.PasswordEncoder"/>
+    
+    <!--<bean id="authenticationSuccessHandler" class="com.beto.test.securityinterceptor.security.MySimpleUrlAuthenticationSuccessHandler"/>-->
+
+<!--        <property name="exceptionMappings">
+            <props>
+                <prop key="org.springframework.security.authentication.BadCredentialsException">/login-failure.jsf?err=HATALI_PWD</prop>
+                <prop key="org.springframework.security.authentication.CredentialsExpiredException">/change-password.jsf</prop>
+                <prop key="org.springframework.security.authentication.LockedException">/login-failure.jsf?err=HESAP_KILITLI</prop>
+                <prop key="org.springframework.security.authentication.DisabledException">/login-failure.jsf?err=HESAP_PASIF</prop>
+            </props>
+        </property>-->
+  
+<!--    <bean name="userDAOImpl" class="com.beto.test.securityinterceptor.security.dao.impl.UserDaoImpl"/>-->
+    
+    <!-- sisSecureResourceFilter ile ROLE = URL eslemesini DB'den dinamik yukluyoruz -->
+    <bean id="sisSecureResourceFilter" class="com.beto.test.securityinterceptor.security.CustomFilterInvocationSecurityMetadataSource">
+		<property name="urlRepository" ref="userPageRole" />
+                <property name="sbean" ref="singletonPageRole" />
+    </bean>
+    
+    <bean id="accessDeniedHandler" class="org.springframework.security.web.access.AccessDeniedHandlerImpl">
+            <property name="errorPage" value="/error403"/>
+    </bean> 
+    
+    <!-- sisSecureResourceFilter ile ROLE = URL eslemesini DB'den dinamik yukluyoruz -->
+    <bean id="filterSecurityInterceptor" 
+            class="org.springframework.security.web.access.intercept.FilterSecurityInterceptor">
+            <property name="authenticationManager" ref="authenticationManager"/>
+            <property name="accessDecisionManager" ref="accessDecisionManager"/>
+            <property name="securityMetadataSource" ref="sisSecureResourceFilter"/>
+
+            <property name="validateConfigAttributes" value="true"/>
+    </bean>
+    
+    <!-- Login Esnasinda Girilen Bilgileri Kontrol Etmek Icın Kullanilmistir -->
+    <bean id="twoFactorAuthenticationFilter" class="com.beto.test.securityinterceptor.security.UserNamePasswordAuth">
+          <property name="authenticationManager" ref="authenticationManager" />
+          <property name="authenticationFailureHandler" ref="myAuthErrorHandler"/>
+          <property name="authenticationSuccessHandler" ref="mySimpleUrlAuthenticationSuccessHandler" />
+          <property name="filterProcessesUrl" value="/j_spring_security_check" />
+          <property name="postOnly" value="false" />
+    </bean>
+    
+    <sec:http auto-config="true" use-expressions="true"
+            authentication-manager-ref="authenticationManager">  
+            
+           <sec:intercept-url pattern="/**" access="isAuthenticated()"/>
+        <sec:intercept-url pattern="/login**" access="ROLE_ANONYMOUS" />
+        <sec:intercept-url pattern="/index**" access="isAuthenticated()" />
+        <sec:intercept-url pattern="/**" access="ROLE_ANONYMOUS" />
+        <sec:intercept-url pattern="/img/**" access="isAuthenticated()" />
+        
+        <sec:custom-filter before="FILTER_SECURITY_INTERCEPTOR" ref="filterSecurityInterceptor" />
+        <sec:custom-filter before="FORM_LOGIN_FILTER" ref="twoFactorAuthenticationFilter" />
+<!--        <sec:custom-filter before="SESSION_MANAGEMENT_FILTER" ref="sessionManagementFilter"/>-->
+        
+        <sec:form-login login-page="/login" 
+                username-parameter="username"
+                password-parameter="password"
+                default-target-url="/login"
+                authentication-failure-url="/login?error"
+                authentication-success-handler-ref="mySimpleUrlAuthenticationSuccessHandler"
+                always-use-default-target="false"
+                
+                />
+        <sec:csrf/>
+        <sec:access-denied-handler ref = "accessDeniedHandler"/>
+     
+        <sec:logout invalidate-session="true"  
+			logout-success-url="/login?logout"
+			logout-url="/j_spring_security_logout"/>
+        
+        <sec:session-management invalid-session-url="/login"/>
+        
+    </sec:http>
+    
+   <bean id="sessionManagementFilter" class="org.springframework.security.web.session.SessionManagementFilter">
+        <constructor-arg name="securityContextRepository" ref="httpSessionSecurityContextRepository" />
+<!--        <property name="invalidSessionStrategy" ref="jsfRedirectStrategy" />-->
+    </bean>
+
+    <!--    <bean id="jsfRedirectStrategy" class="com.sistek.core.filter.JsfRedirectStrategy">
+        <property name="invalidSessionUrl" value="/login.jsf" />
+    </bean>-->
+    
+    <bean id="httpSessionSecurityContextRepository" class="org.springframework.security.web.context.HttpSessionSecurityContextRepository"/>
+    
+    <!--
+    <sec:global-method-security pre-post-annotations="enabled" />
+    -->
+</beans>
